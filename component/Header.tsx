@@ -1,15 +1,12 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Link, NavLink, useLocation } from "react-router"; // ✅ v7
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router";
 import {
   Menu,
   X,
   ChevronDown,
-  Search,
-  // Section icons
   Atom,
   Languages as LanguagesIcon,
   Briefcase,
-  // Link icons
   Calculator,
   FlaskConical,
   Microscope,
@@ -18,6 +15,8 @@ import {
   MessageCircle,
   Banknote,
   LineChart,
+  GraduationCap,
+  Info,
 } from "lucide-react";
 
 /* ---------- types ---------- */
@@ -40,6 +39,8 @@ const MENUS: MegaMenu[] = [
           { label: "Physics", to: "/programs/physics" },
           { label: "Chemistry", to: "/programs/chemistry" },
           { label: "Biology", to: "/programs/biology" },
+          { label: "Computer Science", to: "/programs/cs" },
+          { label: "ICT", to: "/programs/ict" },
         ],
       },
       {
@@ -56,6 +57,7 @@ const MENUS: MegaMenu[] = [
           { label: "Accounting", to: "/programs/accounting" },
           { label: "Economics", to: "/programs/economics" },
           { label: "Business Studies", to: "/programs/business" },
+          { label: "Pakistan Studies", to: "/programs/pakstudies" },
         ],
       },
     ],
@@ -93,18 +95,15 @@ const MENUS: MegaMenu[] = [
   },
 ];
 
-/* ---------- icon registries ---------- */
-// Headings (column titles)
+/* ---------- icons ---------- */
 const HEADING_ICON: Record<string, React.ComponentType<any>> = {
   Science: Atom,
   Languages: LanguagesIcon,
   Commerce: Briefcase,
   "IGCSE / O-Levels": BookOpen,
-  "AS / A-Levels": GraduationCapLike, // fallback alias below
+  "AS / A-Levels": GraduationCap,
   IELTS: Globe,
 };
-
-// Links (rows)
 const LINK_ICON: Record<string, React.ComponentType<any>> = {
   Mathematics: Calculator,
   "Math (Fast Track)": Calculator,
@@ -113,127 +112,166 @@ const LINK_ICON: Record<string, React.ComponentType<any>> = {
   Chemistry: FlaskConical,
   "Chemistry (Fast Track)": FlaskConical,
   Biology: Microscope,
-
   English: BookOpen,
   Urdu: MessageCircle,
   Arabic: MessageCircle,
-
   Accounting: Banknote,
   Economics: LineChart,
   "Business Studies": Briefcase,
-
   "AS Math": Calculator,
   "A2 Physics": Atom,
   "A2 Biology": Microscope,
-
   "IELTS General": Globe,
   "IELTS Academic": Globe,
   "Spoken English": MessageCircle,
 };
 
-/* Small fallback icon (since Lucide has GraduationCap, but to be safe) */
-function GraduationCapLike(props: any) {
-  return <Briefcase {...props} />; // swap to GraduationCap if you have it imported
-}
-
 /* ---------- utils ---------- */
-function cn(...classes: (string | false | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
+const cn = (...c: (string | false | null | undefined)[]) => c.filter(Boolean).join(" ");
+const useIsCoarsePointer = () => {
+  const [coarse, setCoarse] = useState(false);
+  useEffect(() => {
+    if (!window.matchMedia) return;
+    const mq = window.matchMedia("(pointer: coarse)");
+    const update = () => setCoarse(mq.matches);
+    update();
+    mq.addEventListener?.("change", update);
+    return () => mq.removeEventListener?.("change", update);
+  }, []);
+  return coarse;
+};
 
 /* ---------- component ---------- */
 export default function MegaNavbar() {
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [activeIdx, setActiveIdx] = useState<number | null>(null);
-  const navRef = useRef<HTMLDivElement | null>(null);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const location = useLocation();
+  const isCoarse = useIsCoarsePointer();
+  const navRef = useRef<HTMLDivElement | null>(null);
 
-  // determine if a top-level menu should appear active based on current path
-  const isMenuRouteActive = (menu: MegaMenu) => {
-    const allPaths = [
-      menu.to,
-      ...menu.columns.flatMap((c) => c.links.map((l) => l.to)),
-    ];
-    return allPaths.some((p) =>
-      location.pathname === p || location.pathname.startsWith(p + "/")
-    );
-  };
+  // Desktop hover/click state
+  const [desktopOpenIdx, setDesktopOpenIdx] = useState<number | null>(null);
 
-  // flicker protection delay
-  const cancelClose = () => {
+  // Mobile sheet + accordion
+  const [mobileOpen, setMobileOpen] = useState(false);
+  const [mobileAccordionIdx, setMobileAccordionIdx] = useState<number | null>(null);
+
+  // hover controls
+  const closeTimer = useRef<number | null>(null);
+  const switchTimer = useRef<number | null>(null);
+  const hoverEnabled = useMemo(() => !isCoarse, [isCoarse]);
+  const HOVER_SWITCH_DELAY = 160;
+
+  const clearCloseTimer = () => {
     if (closeTimer.current) {
-      clearTimeout(closeTimer.current);
+      window.clearTimeout(closeTimer.current);
       closeTimer.current = null;
     }
   };
   const scheduleClose = (ms = 120) => {
-    cancelClose();
-    closeTimer.current = setTimeout(() => setActiveIdx(null), ms);
+    clearCloseTimer();
+    closeTimer.current = window.setTimeout(() => setDesktopOpenIdx(null), ms);
   };
 
-  // ESC to close
+  const scheduleSwitchTo = (idx: number) => {
+    if (!hoverEnabled) return;
+    if (switchTimer.current) window.clearTimeout(switchTimer.current);
+    switchTimer.current = window.setTimeout(() => {
+      setDesktopOpenIdx(idx);
+      switchTimer.current = null;
+    }, HOVER_SWITCH_DELAY);
+  };
+  const cancelSwitch = () => {
+    if (switchTimer.current) {
+      window.clearTimeout(switchTimer.current);
+      switchTimer.current = null;
+    }
+  };
+
+  const isMenuRouteActive = (menu: MegaMenu) => {
+    const all = [menu.to, ...menu.columns.flatMap((c) => c.links.map((l) => l.to))];
+    return all.some((p) => location.pathname === p || location.pathname.startsWith(p + "/"));
+  };
+
+  // ESC / outside click
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setActiveIdx(null);
+        setDesktopOpenIdx(null);
         setMobileOpen(false);
+        setMobileAccordionIdx(null);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  // click outside
-  useEffect(() => {
-    const onClick = (e: MouseEvent) => {
+    const onDown = (e: MouseEvent) => {
       if (!navRef.current) return;
-      if (!navRef.current.contains(e.target as Node)) setActiveIdx(null);
+      if (!navRef.current.contains(e.target as Node)) setDesktopOpenIdx(null);
     };
-    document.addEventListener("mousedown", onClick);
-    return () => document.removeEventListener("mousedown", onClick);
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("mousedown", onDown);
+    };
   }, []);
 
-  // close on focus leaving the wrapper
+  // cleanup timers
+  useEffect(() => () => { cancelSwitch(); clearCloseTimer(); }, []);
+
+  // reset on route change
+  useEffect(() => {
+    setDesktopOpenIdx(null);
+    setMobileOpen(false);
+    setMobileAccordionIdx(null);
+  }, [location.pathname]);
+
+  // lock scroll for mobile sheet
+  useEffect(() => {
+    const cls = ["overflow-hidden", "touch-none"];
+    if (mobileOpen) document.body.classList.add(...cls);
+    else document.body.classList.remove(...cls);
+    return () => document.body.classList.remove(...cls);
+  }, [mobileOpen]);
+
+  // avoid horizontal scroll wiggle
+  useEffect(() => {
+    document.documentElement.classList.add("overflow-x-clip");
+    document.body.classList.add("overflow-x-clip");
+    return () => {
+      document.documentElement.classList.remove("overflow-x-clip");
+      document.body.classList.remove("overflow-x-clip");
+    };
+  }, []);
+
   const onWrapperBlur = (e: React.FocusEvent<HTMLDivElement>) => {
     const next = e.relatedTarget as Node | null;
     if (navRef.current && next && navRef.current.contains(next)) return;
-    setActiveIdx(null);
+    setDesktopOpenIdx(null);
   };
 
-  // alignment per menu
-  const alignClass = (align?: MenuAlign) => {
-    if (align === "start") return "left-0";
-    if (align === "end") return "right-0";
-    return "left-1/2 -translate-x-1/2"; // center by default
-  };
+  const alignClass = (align?: MenuAlign) =>
+    align === "start" ? "left-0" : align === "end" ? "right-0" : "left-1/2 -translate-x-1/2";
 
   return (
-    <header className="sticky top-0 z-50 backdrop-blur supports-[backdrop-filter]:bg-white/70 bg-white/90 border-b border-slate-200">
-      <div
-        className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8"
-        ref={navRef}
-        onBlur={onWrapperBlur}
-      >
-        <div className="flex h-16 items-center justify-between">
+    <header className="sticky shadow-lg top-0 z-50 bg-white/80 backdrop-blur border-b border-slate-200 overflow-x-clip">
+      <div className="mx-auto max-w-7xl px-3 sm:px-6 lg:px-8" ref={navRef} onBlur={onWrapperBlur}>
+        <div className="flex h-14 sm:h-16 items-center justify-between">
           {/* Brand */}
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-2">
-              <div className="h-9 w-9 rounded-xl bg-blue-600 text-white grid place-items-center font-bold">P</div>
-              <span className="text-lg font-semibold text-slate-900">Pathways Academy</span>
-            </Link>
-          </div>
+          <Link to="/" aria-label="Pathways Academy" className="block">
+            <img
+              src="/pathways.png"
+              alt="Pathways Academy"
+              className="h-9 sm:h-10 w-auto object-contain rounded-md"
+              loading="lazy"
+              height={40}
+            />
+          </Link>
 
           {/* Desktop nav */}
-          <nav className="hidden lg:flex items-stretch gap-2">
+          <nav className="hidden lg:flex items-stretch gap-1.5">
             <NavLink
               to="/"
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
-                  isActive
-                    ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
-                    : "text-slate-700 hover:bg-slate-100"
+                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+                  isActive ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "text-slate-700 hover:bg-slate-100"
                 )
               }
             >
@@ -242,103 +280,117 @@ export default function MegaNavbar() {
             </NavLink>
 
             {MENUS.map((menu, idx) => {
-              const menuIsRouteActive = isMenuRouteActive(menu);
-              const open = activeIdx === idx;
+              const routeActive = isMenuRouteActive(menu);
+              const open = desktopOpenIdx === idx;
+
               return (
                 <div
                   key={menu.label}
                   className="relative"
-                  onMouseEnter={() => {
-                    cancelClose();
-                    setActiveIdx(idx);
-                  }}
-                  onMouseLeave={() => scheduleClose()}
+                  onMouseEnter={
+                    hoverEnabled
+                      ? () => {
+                          clearCloseTimer();
+                          scheduleSwitchTo(idx);
+                        }
+                      : undefined
+                  }
+                  onMouseLeave={hoverEnabled ? () => { cancelSwitch(); scheduleClose(); } : undefined}
                 >
-                  <button
-                    type="button"
-                    className={cn(
-                      "group inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60 transition",
-                      (open || menuIsRouteActive)
-                        ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
-                        : "text-slate-700 hover:bg-slate-100"
-                    )}
-                    aria-expanded={open}
-                    aria-haspopup="true"
-                    onFocus={() => setActiveIdx(idx)}
-                  >
-                    {/* top-level icon per menu (optional: derive from label) */}
-                    {menu.label === "Subjects" ? (
-                      <Atom className="h-4 w-4 opacity-80" />
-                    ) : menu.label === "Crash Courses" ? (
-                      <GraduationCapLike className="h-4 w-4 opacity-80" />
-                    ) : null}
-                    {menu.label}
-                    <ChevronDown
-                      className={cn(
-                        "h-4 w-4 transition-transform",
-                        open && "rotate-180"
+                  {/* Split trigger: label navigates, caret toggles */}
+                  <div className="inline-flex items-stretch">
+                    <NavLink
+                      to={menu.to}
+                      className={({ isActive }) =>
+                        cn(
+                          "inline-flex items-center rounded-l-lg px-3 py-2 text-sm font-medium border border-slate-200",
+                          (isActive || routeActive || open)
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : "text-slate-700 hover:bg-slate-100"
+                        )
+                      }
+                      onFocus={() => setDesktopOpenIdx(idx)}
+                      onClick={() => setDesktopOpenIdx(null)}
+                    >
+                      {menu.label === "Subjects" ? (
+                        <Atom className="h-4 w-4 mr-1 opacity-80" />
+                      ) : (
+                        <GraduationCap className="h-4 w-4 mr-1 opacity-80" />
                       )}
-                    />
-                  </button>
+                      {menu.label}
+                    </NavLink>
 
-                  {/* Mega panel */}
+                    <button
+                      type="button"
+                      aria-label={`Toggle ${menu.label} menu`}
+                      aria-expanded={open}
+                      aria-haspopup="true"
+                      onClick={() => setDesktopOpenIdx((p) => (p === idx ? null : idx))}
+                      onFocus={() => setDesktopOpenIdx(idx)}
+                      className={cn(
+                        "inline-flex items-center rounded-r-lg px-2.5 py-2 border border-l-0 border-slate-200 transition",
+                        (routeActive || open) ? "bg-blue-50 text-blue-700 border-blue-200" : "text-slate-700 hover:bg-slate-100"
+                      )}
+                    >
+                      <ChevronDown className={cn("h-4 w-4 transition-transform", open && "rotate-180")} />
+                    </button>
+                  </div>
+
+                  {/* Mega panel (desktop) — pointer events ONLY when open */}
                   <div
                     className={cn(
-                      "absolute mt-2 w-[60rem] max-w-[96vw] z-[60]",
+                      "absolute mt-1 z-[60] transition",
+                      "w-[52rem] max-w-[min(96vw,56rem)]",
                       alignClass(menu.align),
-                      open ? "block" : "hidden"
+                      open ? "pointer-events-auto" : "pointer-events-none"
                     )}
-                    onMouseEnter={cancelClose}
-                    onMouseLeave={() => scheduleClose()}
+                    onMouseEnter={hoverEnabled ? clearCloseTimer : undefined}
+                    onMouseLeave={hoverEnabled ? () => scheduleClose() : undefined}
                   >
-                    <div className="rounded-2xl border border-slate-200 bg-white shadow-xl">
-                      {/* Header row */}
-                      <div className="flex items-center justify-between px-6 py-3 border-b border-slate-200">
+                    <div
+                      className={cn(
+                        "rounded-xl border border-slate-200 bg-white shadow-xl ring-1 ring-black/5 overflow-hidden",
+                        "transition-all duration-150 ease-out origin-top",
+                        open ? "opacity-100 translate-y-0 scale-100" : "opacity-0 translate-y-1 scale-[0.998]"
+                      )}
+                      role="dialog"
+                      aria-label={`Explore ${menu.label}`}
+                    >
+                      {/* Header row (compact) */}
+                      <div className="flex items-center justify-between px-4 py-2.5 border-b border-slate-200">
                         <div className="text-sm font-semibold text-slate-800 flex items-center gap-2">
                           <span className="inline-flex h-6 w-6 items-center justify-center rounded-md bg-blue-50 text-blue-600">
-                            {menu.label === "Subjects" ? (
-                              <Atom className="h-4 w-4" />
-                            ) : (
-                              <GraduationCapLike className="h-4 w-4" />
-                            )}
+                            {menu.label === "Subjects" ? <Atom className="h-4 w-4" /> : <GraduationCap className="h-4 w-4" />}
                           </span>
                           Explore {menu.label}
                         </div>
                         <Link
                           to={menu.to}
                           className="text-xs font-medium text-blue-700 hover:underline"
-                          onClick={() => setActiveIdx(null)}
+                          onClick={() => setDesktopOpenIdx(null)}
                         >
-                          View all {menu.label} →
+                          View all →
                         </Link>
                       </div>
 
-                      {/* Columns with vertical dividers */}
-                      <div className="grid grid-cols-3 gap-0 px-2 py-4">
+                      {/* Columns */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-0 px-1.5 py-3">
                         {menu.columns.map((col, i) => {
-                          const HeadingIcon =
-                            HEADING_ICON[col.heading] ?? Briefcase;
+                          const HeadingIcon = HEADING_ICON[col.heading] ?? Briefcase;
                           return (
-                            <div
-                              key={col.heading}
-                              className={cn(
-                                "px-4",
-                                i !== 0 && "border-l border-slate-200",
-                                "min-w-0"
-                              )}
-                            >
-                              <div className="mb-2 flex items-center justify-between">
-                                <span className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
+                            <div key={col.heading} className={cn("px-3", i !== 0 && "md:border-l border-slate-200", "min-w-0")}>
+                              <div className="mb-1.5 flex items-center justify-between">
+                                <span className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-slate-500">
                                   <HeadingIcon className="h-3.5 w-3.5" />
                                   {col.heading}
                                 </span>
-                                <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-600">
+                                <span className="rounded bg-slate-100 px-1 py-0.5 text-[10px] text-slate-600">
                                   {col.links.length}
                                 </span>
                               </div>
 
                               <ul className="rounded-lg overflow-hidden">
-                                {col.links.map((l: LinkItem) => {
+                                {col.links.map((l) => {
                                   const RowIcon = LINK_ICON[l.label] ?? BookOpen;
                                   return (
                                     <li key={l.to}>
@@ -346,20 +398,18 @@ export default function MegaNavbar() {
                                         to={l.to}
                                         className={({ isActive }) =>
                                           cn(
-                                            "flex items-center justify-between gap-3 px-3 py-2 text-sm transition",
+                                            "group flex items-center justify-between gap-3 px-2.5 py-2 text-[13px] transition",
                                             "hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/50",
-                                            isActive
-                                              ? "bg-blue-50 text-blue-700"
-                                              : "text-slate-700"
+                                            isActive ? "bg-blue-50 text-blue-700" : "text-slate-700"
                                           )
                                         }
-                                        onClick={() => setActiveIdx(null)}
+                                        onClick={() => setDesktopOpenIdx(null)}
                                       >
                                         <span className="flex items-center gap-2 min-w-0">
-                                          <RowIcon className="h-4 w-4 shrink-0 text-slate-400" />
+                                          <RowIcon className="h-4 w-4 shrink-0 text-slate-400 group-hover:text-slate-500" />
                                           <span className="truncate">{l.label}</span>
                                         </span>
-                                        <span className="text-slate-300">›</span>
+                                        <span className="text-slate-300 group-hover:text-slate-400">›</span>
                                       </NavLink>
                                     </li>
                                   );
@@ -370,19 +420,17 @@ export default function MegaNavbar() {
                         })}
                       </div>
 
-                      {/* Promo / CTA strip */}
-                      <div className="px-6 py-4 border-t border-slate-200">
-                        <div className="flex items-center justify-between rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-3 text-white">
-                          <div className="space-y-0.5">
-                            <div className="text-xs opacity-90">New Session</div>
-                            <div className="text-base font-semibold">
-                              Admissions Open — Fall 2025
-                            </div>
+                      {/* CTA (short) */}
+                      <div className="px-4 py-3 border-t border-slate-200">
+                        <div className="flex items-center justify-between rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-2 text-white">
+                          <div className="space-y-0">
+                            <div className="text-[11px] opacity-90 leading-4">New Session</div>
+                            <div className="text-sm font-semibold leading-5">Admissions Open — Fall 2025</div>
                           </div>
                           <Link
                             to="/admissions/apply"
-                            className="rounded-lg bg-white/10 px-3 py-1.5 text-sm font-medium hover:bg-white/20"
-                            onClick={() => setActiveIdx(null)}
+                            className="rounded-md bg-white/10 px-2.5 py-1 text-xs font-medium hover:bg-white/20"
+                            onClick={() => setDesktopOpenIdx(null)}
                           >
                             Apply Now
                           </Link>
@@ -399,19 +447,19 @@ export default function MegaNavbar() {
               to="/about"
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
                   isActive ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "text-slate-700 hover:bg-slate-100"
                 )
               }
             >
-              <InfoDotLike className="h-4 w-4" />
+              <Info className="h-4 w-4" />
               About
             </NavLink>
             <NavLink
               to="/contact"
               className={({ isActive }) =>
                 cn(
-                  "inline-flex items-center gap-2 rounded-xl px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
+                  "inline-flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500/60",
                   isActive ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200" : "text-slate-700 hover:bg-slate-100"
                 )
               }
@@ -421,25 +469,17 @@ export default function MegaNavbar() {
             </NavLink>
           </nav>
 
-          {/* Right actions */}
-          <div className="hidden lg:flex items-center gap-3">
-            <div className="relative">
-              <input
-                type="text"
-                placeholder="Search…"
-                className="w-56 rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <Search className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            </div>
+          {/* Right actions (desktop) */}
+          <div className="hidden lg:flex items-center gap-2.5">
             <Link
               to="/login"
-              className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
             >
               Log in
             </Link>
             <Link
               to="/register"
-              className="rounded-xl bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
+              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white shadow hover:bg-blue-700"
             >
               Sign up
             </Link>
@@ -447,8 +487,9 @@ export default function MegaNavbar() {
 
           {/* Mobile toggle */}
           <button
-            className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-300 text-slate-700"
-            aria-label="Open menu"
+            className="lg:hidden inline-flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 text-slate-700"
+            aria-label={mobileOpen ? "Close menu" : "Open menu"}
+            aria-expanded={mobileOpen}
             onClick={() => setMobileOpen((v) => !v)}
           >
             {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
@@ -456,131 +497,138 @@ export default function MegaNavbar() {
         </div>
       </div>
 
-      {/* Mobile panel */}
-      <div
-        className={cn(
-          "lg:hidden border-t border-slate-200 bg-white shadow-sm",
-          mobileOpen ? "block" : "hidden"
-        )}
-      >
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-          <div className="mb-3">
-            <input
-              type="text"
-              placeholder="Search…"
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
+      {/* ========= Mobile Overlay & Sheet ========= */}
+      <div className={cn("lg:hidden", mobileOpen ? "fixed inset-0 z-50" : "hidden")}>
+        <button
+          aria-label="Close menu"
+          onClick={() => setMobileOpen(false)}
+          className="absolute inset-0 bg-slate-900/40 backdrop-blur-[2px]"
+        />
+        <div
+          role="dialog"
+          aria-modal="true"
+          className={cn(
+            "absolute inset-x-0 top-14 sm:top-16 bg-white shadow-xl border-t border-slate-200 h-[calc(100dvh-3.5rem)] sm:h-[calc(100dvh-4rem)]",
+            "transition-transform duration-200 ease-out translate-y-0 will-change-transform overflow-x-clip"
+          )}
+        >
+          <div className="mx-auto h-full max-w-7xl px-3 sm:px-6 lg:px-8">
+            <ul className="space-y-2 h-full overflow-y-auto pr-1">
+              {MENUS.map((menu, idx) => {
+                const expanded = mobileAccordionIdx === idx;
+                return (
+                  <li key={menu.label} className="rounded-xl border border-slate-200 overflow-hidden">
+                    <button
+                      className="flex w-full items-center justify-between px-4 py-3 text-left text-slate-900"
+                      onClick={() => setMobileAccordionIdx(expanded ? null : idx)}
+                      aria-expanded={expanded}
+                      aria-controls={`mobile-panel-${idx}`}
+                    >
+                      <span className="font-medium flex items-center gap-2">
+                        {menu.label === "Subjects" ? <Atom className="h-5 w-5" /> : <GraduationCap className="h-5 w-5" />}
+                        {menu.label}
+                      </span>
+                      <ChevronDown className={cn("h-5 w-5 transition-transform", expanded && "rotate-180")} />
+                    </button>
 
-          <ul className="space-y-2">
-            {MENUS.map((menu, idx) => (
-              <li key={menu.label} className="rounded-2xl border border-slate-200">
-                <button
-                  className="flex w-full items-center justify-between px-4 py-3 text-left text-slate-800"
-                  onClick={() => setActiveIdx(activeIdx === idx ? null : idx)}
-                  aria-expanded={activeIdx === idx}
-                >
-                  <span className="font-medium flex items-center gap-2">
-                    {menu.label === "Subjects" ? (
-                      <Atom className="h-4 w-4" />
-                    ) : (
-                      <GraduationCapLike className="h-4 w-4" />
-                    )}
-                    {menu.label}
-                  </span>
-                  <ChevronDown
-                    className={cn("h-4 w-4 transition-transform", activeIdx === idx && "rotate-180")}
-                  />
-                </button>
-
-                <div className={cn("px-2 pb-3", activeIdx === idx ? "block" : "hidden")}>
-                  {menu.columns.map((col) => {
-                    const HIcon = HEADING_ICON[col.heading] ?? Briefcase;
-                    return (
-                      <div key={col.heading} className="px-2 pb-2">
-                        <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
-                          <HIcon className="h-3.5 w-3.5" />
-                          {col.heading}
-                        </div>
-                        <ul className="rounded-lg overflow-hidden border border-slate-200">
-                          {col.links.map((l) => {
-                            const LIcon = LINK_ICON[l.label] ?? BookOpen;
+                    <div
+                      id={`mobile-panel-${idx}`}
+                      className={cn(
+                        "grid grid-rows-[0fr] transition-[grid-template-rows] duration-200 ease-in-out",
+                        expanded && "grid-rows-[1fr]"
+                      )}
+                    >
+                      <div className="overflow-hidden">
+                        <div className="px-2 pb-2 grid grid-cols-1 gap-2">
+                          {menu.columns.map((col) => {
+                            const HIcon = HEADING_ICON[col.heading] ?? Briefcase;
                             return (
-                              <li key={l.to} className="border-b last:border-b-0 border-slate-200">
-                                <NavLink
-                                  to={l.to}
-                                  className={({ isActive }) =>
-                                    cn(
-                                      "flex items-center gap-2 px-3 py-2 text-sm",
-                                      isActive ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-50"
-                                    )
-                                  }
-                                  onClick={() => setMobileOpen(false)}
-                                >
-                                  <LIcon className="h-4 w-4 text-slate-400" />
-                                  {l.label}
-                                </NavLink>
-                              </li>
+                              <div key={col.heading} className="px-2 pb-2">
+                                <div className="px-2 py-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500 flex items-center gap-2">
+                                  <HIcon className="h-4 w-4" />
+                                  {col.heading}
+                                </div>
+                                <ul className="rounded-lg overflow-hidden border border-slate-200">
+                                  {col.links.map((l) => {
+                                    const LIcon = LINK_ICON[l.label] ?? BookOpen;
+                                    return (
+                                      <li key={l.to} className="border-b last:border-b-0 border-slate-200">
+                                        <NavLink
+                                          to={l.to}
+                                          className={({ isActive }) =>
+                                            cn(
+                                              "flex items-center gap-3 px-3 py-3 text-[15px]",
+                                              isActive ? "bg-blue-50 text-blue-700" : "text-slate-700 hover:bg-slate-50"
+                                            )
+                                          }
+                                          onClick={() => {
+                                            setMobileOpen(false);
+                                            setMobileAccordionIdx(null);
+                                          }}
+                                        >
+                                          <LIcon className="h-5 w-5 text-slate-400 shrink-0" />
+                                          <span className="truncate">{l.label}</span>
+                                        </NavLink>
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              </div>
                             );
                           })}
-                        </ul>
+                        </div>
                       </div>
-                    );
-                  })}
-                </div>
+                    </div>
+                  </li>
+                );
+              })}
+
+              <li className="rounded-xl border border-slate-200">
+                <NavLink
+                  to="/about"
+                  className={({ isActive }) =>
+                    cn("flex items-center gap-3 px-4 py-3 text-slate-900", isActive && "bg-blue-50 text-blue-700")
+                  }
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <Info className="h-5 w-5" />
+                  About
+                </NavLink>
               </li>
-            ))}
+              <li className="rounded-xl border border-slate-200">
+                <NavLink
+                  to="/contact"
+                  className={({ isActive }) =>
+                    cn("flex items-center gap-3 px-4 py-3 text-slate-900", isActive && "bg-blue-50 text-blue-700")
+                  }
+                  onClick={() => setMobileOpen(false)}
+                >
+                  <MessageCircle className="h-5 w-5" />
+                  Contact
+                </NavLink>
+              </li>
 
-            {/* simple links */}
-            <li className="rounded-2xl border border-slate-200">
-              <NavLink
-                to="/about"
-                className={({ isActive }) =>
-                  cn("flex items-center gap-2 px-4 py-3 text-slate-800", isActive && "bg-blue-50 text-blue-700")
-                }
-                onClick={() => setMobileOpen(false)}
-              >
-                <InfoDotLike className="h-4 w-4" />
-                About
-              </NavLink>
-            </li>
-            <li className="rounded-2xl border border-slate-200">
-              <NavLink
-                to="/contact"
-                className={({ isActive }) =>
-                  cn("flex items-center gap-2 px-4 py-3 text-slate-800", isActive && "bg-blue-50 text-blue-700")
-                }
-                onClick={() => setMobileOpen(false)}
-              >
-                <MessageCircle className="h-4 w-4" />
-                Contact
-              </NavLink>
-            </li>
-
-            <li className="flex gap-2">
-              <Link
-                to="/login"
-                className="flex-1 rounded-xl border border-slate-300 px-3 py-2 text-center text-sm font-medium text-slate-700"
-                onClick={() => setMobileOpen(false)}
-              >
-                Log in
-              </Link>
-              <Link
-                to="/register"
-                className="flex-1 rounded-xl bg-blue-600 px-3 py-2 text-center text-sm font-semibold text-white"
-                onClick={() => setMobileOpen(false)}
-              >
-                Sign up
-              </Link>
-            </li>
-          </ul>
+              <li className="flex gap-2 sticky bottom-0 bg-white pt-2 pb-[max(env(safe-area-inset-bottom),0.75rem)]">
+                <Link
+                  to="/login"
+                  className="flex-1 rounded-lg border border-slate-300 px-3 py-3 text-center text-sm font-medium text-slate-700"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/register"
+                  className="flex-1 rounded-lg bg-blue-600 px-3 py-3 text-center text-sm font-semibold text-white"
+                  onClick={() => setMobileOpen(false)}
+                >
+                  Sign up
+                </Link>
+              </li>
+            </ul>
+          </div>
         </div>
       </div>
+      {/* ========= /Mobile Overlay & Sheet ========= */}
     </header>
   );
-}
-
-/* tiny info icon fallback */
-function InfoDotLike(props: any) {
-  return <i {...props} className={cn(props.className, "relative inline-block")} />;
 }

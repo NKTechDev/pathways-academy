@@ -13,6 +13,8 @@ export default [
   route("login", "routes/login.tsx"),
   route("register", "routes/register.tsx"),
   route("forget-password", "routes/forget.tsx"),
+  route("contact", "routes/contactUs.tsx"),
+
 
 
 //   route("login", "routes/login.tsx"),

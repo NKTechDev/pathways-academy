@@ -180,7 +180,7 @@ const Register = () => {
       <div className="w-full md:w-3/4 lg:w-2/3  p-8 bg-white/90 backdrop-blur rounded-2xl">
         {/* Header */}
         <div className="flex flex-col items-center mb-6">
-          <img  alt="Logo" className="w-16 mb-3" />
+          <img src="pathways.png"  alt="Logo" className="w-16 mb-3" />
           <h2 className="text-3xl font-bold text-blue-900">Join Pathways Academy</h2>
           <p className="text-gray-600 mt-1 text-center">
             Register now to access courses, resources, and exclusive academic support.

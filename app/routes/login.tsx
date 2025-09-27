@@ -99,7 +99,7 @@ export default function Login() {
         <div className="hidden w-[42%] md:block">
           <div className="rounded-3xl bg-white/60 p-8 shadow-lg ring-1 ring-sky-200/60 backdrop-blur">
             <img
-              // src={clogo}
+              src="pathways.png"
               alt="ovs logo"
               className="mx-auto h-16 w-auto"
               draggable="false"
